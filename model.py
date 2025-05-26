@@ -167,7 +167,7 @@ class Cocoons_prediction(nn.Module):
         cat_outputs = torch.stack(cat_outputs, dim=1)
         cat_outputs1 = cat_outputs.detach().clone()
 
-        # QK attention计算
+        # QK attention
         Q = torch.einsum('bni,nii->bni', cat_outputs, self.W_q) + self.b_q.unsqueeze(0).unsqueeze(-1)
         K = torch.einsum('bni,nii->bni', cat_outputs, self.W_k) + self.b_k.unsqueeze(0).unsqueeze(-1)
 
@@ -175,30 +175,30 @@ class Cocoons_prediction(nn.Module):
         K_norm = torch.norm(K, p=2, dim=-1, keepdim=True)
         cosine_similarity = (torch.matmul(Q, K.transpose(-2, -1))) / (Q_norm * K_norm.transpose(-2, -1) + 1e-8)
 
-        # 加上邻接矩阵引导的转移
-        cat_outputs = torch.matmul(cosine_similarity, cat_outputs)
-        adj = torch.eye(self.num_nodes).to(self.adj.device) + F.softmax(F.relu(self.adj), dim=1)
-        cat_outputs = torch.matmul(adj, cat_outputs)
-
-        # 拼接：每个节点三个部分
+        
+        # cat_outputs = torch.matmul(cosine_similarity, cat_outputs)
+        # adj = torch.eye(self.num_nodes).to(self.adj.device) + F.softmax(F.relu(self.adj), dim=1)
+        # cat_outputs = torch.matmul(adj, cat_outputs)
+        cosine_similarity+= self.adj
+        cat_outputs = torch.matmul(F.softmax(cosine_similarity,dim=2), cat_outputs)
+        
         total_outputs = torch.cat([
             channel_outputs[:, 1:, :],  # (N, num_nodes, embed_dim)
             cat_outputs1,               # (N, num_nodes, embed_dim)
             cat_outputs                 # (N, num_nodes, embed_dim)
         ], dim=2)  # => (N, num_nodes, embed_dim * 3)
 
-        # 对每个节点进行解码
+        # decode
         decode = [
             decoder(total_outputs[:, i, :]) 
             for i, decoder in enumerate(self.decoder)
         ]
         decode = torch.cat(decode, dim=1)  # (N, num_nodes)
 
-        # 最终分类层
         xc = self.fc(torch.cat([
-            channel_outputs[:, 0, :],         # 全局节点的 embed_dim
-            x_temporal.view(N, -1),           # 所有原始输入
-            decode                            # 所有节点的预测
+            channel_outputs[:, 0, :],         
+            x_temporal.view(N, -1),           
+            decode                            
         ], dim=1))
 
         output = torch.sigmoid(xc)
@@ -256,7 +256,7 @@ for epoch in range(num_epochs):
     predicted_labels = (predictions > thrs).astype(int)
     y_test=np.array(true_labels)
 
-    # 计算评估指标
+    
     accuracy = accuracy_score(y_test, predicted_labels)
     precision = precision_score(y_test, predicted_labels)
     recall = recall_score(y_test, predicted_labels)
@@ -316,6 +316,7 @@ with torch.no_grad():
         predictions.extend(outputs.squeeze().cpu().numpy())
         true_labels.extend(y.cpu().numpy())
 predictions = np.array(predictions)
+#np.save('train_predictions.npy',predictions)
 predicted_labels = (predictions > thrs).astype(int)
 y_test=np.array(true_labels)
 #np.save('y_test.npy',y_test)
