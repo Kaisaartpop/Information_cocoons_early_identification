@@ -1,4 +1,5 @@
 # Information_cocoons_early_identification
+![Model Overview](./model.png)
 ## 📁 Dataset Preparation
 
 Please prepare your dataset and place it under the following directory:
